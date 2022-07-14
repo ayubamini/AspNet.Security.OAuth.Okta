@@ -1,5 +1,3 @@
-﻿using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
 using System.Net.Http.Headers;
@@ -10,9 +8,10 @@ using System.Text;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
 using System.Text.Encodings.Web;
-using System.Globalization;
 using Microsoft.Extensions.Primitives;
-using Microsoft.Net.Http.Headers;
+using System.Globalization;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OAuth;
 
 namespace AspNet.Security.OAuth.Okta
 {
@@ -28,7 +27,40 @@ namespace AspNet.Security.OAuth.Okta
 
         }
 
-        // STEP #1: CREATE CHALLENGE URL
+        // Step #1 - Start a challenge
+        protected override async Task HandleChallengeAsync(AuthenticationProperties properties)
+        {
+            if (string.IsNullOrEmpty(properties.RedirectUri))
+            {
+                properties.RedirectUri = OriginalPathBase + OriginalPath + Request.QueryString;
+            }
+
+            // OAuth2 10.12 CSRF
+            GenerateCorrelationId(properties);
+
+            var authorizationEndpoint = BuildChallengeUrl(properties, BuildRedirectUri(Options.CallbackPath));
+            var redirectContext = new RedirectContext<OAuthOptions>(
+                Context, Scheme, Options,
+                properties, authorizationEndpoint);
+            await Events.RedirectToAuthorizationEndpoint(redirectContext);
+
+            var location = Context.Response.Headers.Location;
+            if (location == StringValues.Empty)
+            {
+                location = "(not set)";
+            }
+
+            var cookie = Context.Response.Headers.SetCookie;
+            if (cookie == StringValues.Empty)
+            {
+                cookie = "(not set)";
+            }
+
+            Logger.HandleChallenge(location.ToString(), cookie.ToString());
+        }
+
+
+        // CREATE CHALLENGE URL
         protected override string BuildChallengeUrl([NotNull] AuthenticationProperties properties, [NotNull] string redirectUri)
         {
             var scopeParameter = properties.GetParameter<ICollection<string>>(OAuthChallengeProperties.ScopeKey);
@@ -38,7 +70,8 @@ namespace AspNet.Security.OAuth.Okta
             {
                 ["client_id"] = Options.ClientId,
                 ["response_type"] = "code",
-                ["scope"] = scope
+                ["scope"] = scope,
+                ["redirect_uri"] = redirectUri
             };
 
             if (Options.UsePkce)
@@ -59,7 +92,6 @@ namespace AspNet.Security.OAuth.Okta
 
             var state = Options.StateDataFormat.Protect(properties);
             parameters["state"] = state;
-            parameters["redirect_uri"] = redirectUri;
 
             //parameters["redirect_uri"] = QueryHelpers.AddQueryString(redirectUri, "state", state);            
 
@@ -87,11 +119,6 @@ namespace AspNet.Security.OAuth.Okta
             var error = query["error"];
             if (!StringValues.IsNullOrEmpty(error))
             {
-                // Note: access_denied errors are special protocol errors indicating the user didn't
-                // approve the authorization demand requested by the remote authorization server.
-                // Since it's a frequent scenario (that is not caused by incorrect configuration),
-                // denied errors are handled differently using HandleAccessDeniedErrorAsync().
-                // Visit https://tools.ietf.org/html/rfc6749#section-4.1.2.1 for more information.
                 var errorDescription = query["error_description"];
                 var errorUri = query["error_uri"];
                 if (StringValues.Equals(error, "access_denied"))
@@ -135,7 +162,7 @@ namespace AspNet.Security.OAuth.Okta
                 return HandleRequestResult.Fail("Code was not found.", properties);
             }
 
-            var codeExchangeContext = new OAuthCodeExchangeContext(properties, code, BuildRedirectUri(Options.CallbackPath));
+            var codeExchangeContext = new OAuthCodeExchangeContext(properties, code.ToString(), BuildRedirectUri(Options.CallbackPath));
             using var tokens = await ExchangeCodeAsync(codeExchangeContext);
 
             if (tokens.Error != null)
@@ -195,7 +222,7 @@ namespace AspNet.Security.OAuth.Okta
             }
         }
 
-        // STEP #2: CHANGE RECEIVED CODE WITH ACCESS_TOKEN
+        // CHANGE RECEIVED CODE WITH ACCESS_TOKEN
         protected override async Task<OAuthTokenResponse> ExchangeCodeAsync([NotNull] OAuthCodeExchangeContext context)
         {
             var tokenRequestParameters = new Dictionary<string, string?>()
@@ -208,41 +235,47 @@ namespace AspNet.Security.OAuth.Okta
             };
 
             // Add CodeVerify to tokenRequestParameters
+            // PKCE https://tools.ietf.org/html/rfc7636#section-4.5, see BuildChallengeUrl
             if (context.Properties.Items.TryGetValue(OAuthConstants.CodeVerifierKey, out var codeVerifier))
             {
-                tokenRequestParameters.Add(OAuthConstants.CodeVerifierKey, codeVerifier);
+                tokenRequestParameters.Add(OAuthConstants.CodeVerifierKey, codeVerifier!);
                 context.Properties.Items.Remove(OAuthConstants.CodeVerifierKey);
             }
 
-            var endpoint = QueryHelpers.AddQueryString(Options.TokenEndpoint, tokenRequestParameters);
+            var requestContent = new FormUrlEncodedContent(tokenRequestParameters!);
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, Options.TokenEndpoint);
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/x-www-form-urlencoded"));
-            request.Content = new FormUrlEncodedContent(tokenRequestParameters);
+            var requestMessage = new HttpRequestMessage(HttpMethod.Post, Options.TokenEndpoint);
+            requestMessage.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            requestMessage.Content = requestContent;
+            requestMessage.Version = Backchannel.DefaultRequestVersion;
+            var response = await Backchannel.SendAsync(requestMessage, Context.RequestAborted);
+            var body = await response.Content.ReadAsStringAsync(Context.RequestAborted);
 
-            using var response = await Backchannel.SendAsync(request, Context.RequestAborted);
-            if (!response.IsSuccessStatusCode)
+            return response.IsSuccessStatusCode switch
             {
-                await Log.ExchangeCodeErrorAsync(Logger, response, Context.RequestAborted);
-                return OAuthTokenResponse.Failed(new System.Exception("An error occurred while retrieving an OAuth token."));
-            }
-
-            var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Context.RequestAborted));
-
-            //var accessToken = payload.RootElement.GetProperty("access_token").GetString("token");
-            //var token = new
-            //{
-            //    access_token = accessToken,
-            //    token_type = string.Empty,
-            //    refresh_token = string.Empty,
-            //    expires_in = string.Empty,
-            //};
-            //return OAuthTokenResponse.Success(JsonSerializer.SerializeToDocument(token));
-
-            return OAuthTokenResponse.Success(payload);
+                true => OAuthTokenResponse.Success(JsonDocument.Parse(body)),
+                false => PrepareFailedOAuthTokenReponse(response, body)
+            };
         }
 
-        // STEP #3: CREATE_TICKET TO GET USER INFORMATIONS BASED ON SCOPES
+
+        private static OAuthTokenResponse PrepareFailedOAuthTokenReponse(HttpResponseMessage response, string body)
+        {
+            //var errorMessage = $"OAuth token endpoint failure: Status: Unknown Error";
+            //return OAuthTokenResponse.Failed(new Exception(errorMessage));
+
+            var exception = OAuthTokenResponse.GetStandardErrorException(JsonDocument.Parse(body));
+
+            if (exception is null)
+            {
+                var errorMessage = $"OAuth token endpoint failure: Status: {response.StatusCode};Headers: {response.Headers};Body: {body};";
+                return OAuthTokenResponse.Failed(new Exception(errorMessage));
+            }
+
+            return OAuthTokenResponse.Failed(exception);
+        }
+
+        // CREATE_TICKET TO GET USER INFORMATIONS BASED ON SCOPES
         protected override async Task<AuthenticationTicket> CreateTicketAsync(
             [NotNull] ClaimsIdentity identity,
             [NotNull] AuthenticationProperties properties,
