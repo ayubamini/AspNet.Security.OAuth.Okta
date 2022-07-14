@@ -32,7 +32,8 @@ namespace AspNet.Security.OAuth.Okta
 
             //Events = new OAuthEvents
             //{
-            //    OnCreatingTicket = async context => { await context.HttpContext.ChallengeAsync(); },
+            //    OnRedirectToAuthorizationEndpoint = async context => { await context.HttpContext.ChallengeAsync(AuthorizationEndpoint); },
+            //    OnCreatingTicket = async context => { await context.HttpContext.ChallengeAsync(); }
             //};
         }
 
