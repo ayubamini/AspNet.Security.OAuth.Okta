@@ -14,6 +14,12 @@ namespace OktaClient.Controllers
     [AllowAnonymous]
     public class OktaClientController : Controller
     {
+        private readonly OktaAuthenticationHandler handler;
+
+        public OktaClientController(OktaAuthenticationHandler handler)
+        {
+            this.handler = handler;
+        }
        
         [HttpGet("~/signin")]
         public async Task<IActionResult> SignIn() => View("SignIn", await HttpContext.GetExternalProvidersAsync());
@@ -36,19 +42,16 @@ namespace OktaClient.Controllers
 
         [HttpPost("~/redirect")]
         [HttpGet("~/redirect")]
-        public IActionResult Callback()
+        public async Task<IActionResult> Callback()
         {
-            var code = Request.Query["code"].ToString();
-            var state = Request.Query["state"].ToString();
+            var code = ViewBag.Code = Request.Query["code"].ToString();
+            var state = ViewBag.State = Request.Query["state"].ToString();
 
-            var query = new QueryBuilder
-            {
-                { "code", code },
-                { "state", state }
-            };
-            var url = "/" + query;
+            var query = new QueryBuilder();
+            query.Add("code", code.ToString());
+            query.Add("state", state.ToString());
 
-            return Redirect($"https://localhost:7209/redirect/{query}");
+            return View();
         }
             
 

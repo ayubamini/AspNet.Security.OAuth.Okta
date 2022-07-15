@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
 using System.Net.Http.Headers;
 using System.Security.Claims;
@@ -12,6 +11,7 @@ using Microsoft.Extensions.Primitives;
 using System.Globalization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OAuth;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace AspNet.Security.OAuth.Okta
 {
@@ -27,7 +27,7 @@ namespace AspNet.Security.OAuth.Okta
 
         }
 
-        // Step #1 - Start a challenge
+        // Step #1 - Start the challenge
         protected override async Task HandleChallengeAsync(AuthenticationProperties properties)
         {
             if (string.IsNullOrEmpty(properties.RedirectUri))
@@ -42,6 +42,7 @@ namespace AspNet.Security.OAuth.Okta
             var redirectContext = new RedirectContext<OAuthOptions>(
                 Context, Scheme, Options,
                 properties, authorizationEndpoint);
+
             await Events.RedirectToAuthorizationEndpoint(redirectContext);
 
             var location = Context.Response.Headers.Location;
@@ -57,10 +58,10 @@ namespace AspNet.Security.OAuth.Okta
             }
 
             Logger.HandleChallenge(location.ToString(), cookie.ToString());
+
         }
 
-
-        // CREATE CHALLENGE URL
+        // Build Authorization Url
         protected override string BuildChallengeUrl([NotNull] AuthenticationProperties properties, [NotNull] string redirectUri)
         {
             var scopeParameter = properties.GetParameter<ICollection<string>>(OAuthChallengeProperties.ScopeKey);
@@ -76,9 +77,9 @@ namespace AspNet.Security.OAuth.Okta
 
             if (Options.UsePkce)
             {
-                //var bytes = RandomNumberGenerator.GetInt32(256 / 8);
-                var bytes = BitConverter.GetBytes(256 / 8);
-                var codeVerifier = WebEncoders.Base64UrlEncode(bytes);
+                var bytes = new byte[32];
+                RandomNumberGenerator.Fill(bytes);
+                var codeVerifier = Microsoft.AspNetCore.WebUtilities.Base64UrlTextEncoder.Encode(bytes);
 
                 // Store this for use during the code redemption.
                 properties.Items.Add(OAuthConstants.CodeVerifierKey, codeVerifier);
@@ -90,14 +91,12 @@ namespace AspNet.Security.OAuth.Okta
                 parameters[OAuthConstants.CodeChallengeMethodKey] = OAuthConstants.CodeChallengeMethodS256;
             }
 
-            var state = Options.StateDataFormat.Protect(properties);
-            parameters["state"] = state;
-
-            //parameters["redirect_uri"] = QueryHelpers.AddQueryString(redirectUri, "state", state);            
+            parameters["state"] = Options.StateDataFormat.Protect(properties);
 
             return QueryHelpers.AddQueryString(Options.AuthorizationEndpoint, parameters);
         }
 
+        // Handle Remote Authenticate
         protected override async Task<HandleRequestResult> HandleRemoteAuthenticateAsync()
         {
             var query = Request.Query;
@@ -222,19 +221,18 @@ namespace AspNet.Security.OAuth.Okta
             }
         }
 
-        // CHANGE RECEIVED CODE WITH ACCESS_TOKEN
-        protected override async Task<OAuthTokenResponse> ExchangeCodeAsync([NotNull] OAuthCodeExchangeContext context)
+        // Step #2 - CHANGE RECEIVED CODE WITH ACCESS_TOKEN
+        protected virtual async Task<OAuthTokenResponse> ExchangeCodeAsync(OAuthCodeExchangeContext context)
         {
-            var tokenRequestParameters = new Dictionary<string, string?>()
+            var tokenRequestParameters = new Dictionary<string, string>()
             {
-                ["client_id"] = Options.ClientId,
-                ["client_secret"] = Options.ClientSecret,
-                ["redirect_uri"] = context.RedirectUri,
-                ["code"] = context.Code,
-                ["grant_type"] = "authorization_code"
+                { "client_id", Options.ClientId },
+                { "redirect_uri", context.RedirectUri },
+                { "client_secret", Options.ClientSecret },
+                { "code", context.Code },
+                { "grant_type", "authorization_code" },
             };
 
-            // Add CodeVerify to tokenRequestParameters
             // PKCE https://tools.ietf.org/html/rfc7636#section-4.5, see BuildChallengeUrl
             if (context.Properties.Items.TryGetValue(OAuthConstants.CodeVerifierKey, out var codeVerifier))
             {
@@ -256,30 +254,13 @@ namespace AspNet.Security.OAuth.Okta
                 true => OAuthTokenResponse.Success(JsonDocument.Parse(body)),
                 false => PrepareFailedOAuthTokenReponse(response, body)
             };
-        }
+        }        
 
-
-        private static OAuthTokenResponse PrepareFailedOAuthTokenReponse(HttpResponseMessage response, string body)
-        {
-            //var errorMessage = $"OAuth token endpoint failure: Status: Unknown Error";
-            //return OAuthTokenResponse.Failed(new Exception(errorMessage));
-
-            var exception = OAuthTokenResponse.GetStandardErrorException(JsonDocument.Parse(body));
-
-            if (exception is null)
-            {
-                var errorMessage = $"OAuth token endpoint failure: Status: {response.StatusCode};Headers: {response.Headers};Body: {body};";
-                return OAuthTokenResponse.Failed(new Exception(errorMessage));
-            }
-
-            return OAuthTokenResponse.Failed(exception);
-        }
-
-        // CREATE_TICKET TO GET USER INFORMATIONS BASED ON SCOPES
+        // Step #3 - CREATE_TICKET TO GET USER INFORMATIONS BASED ON SCOPES
         protected override async Task<AuthenticationTicket> CreateTicketAsync(
             [NotNull] ClaimsIdentity identity,
             [NotNull] AuthenticationProperties properties,
-            [NotNull] OAuthTokenResponse tokens)
+            [NotNull] Microsoft.AspNetCore.Authentication.OAuth.OAuthTokenResponse tokens)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, Options.UserInformationEndpoint);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
@@ -301,7 +282,20 @@ namespace AspNet.Security.OAuth.Okta
             return new AuthenticationTicket(context.Principal!, context.Properties, Scheme.Name);
         }
 
-        // Log methos to show error messages
+        private static OAuthTokenResponse PrepareFailedOAuthTokenReponse(HttpResponseMessage response, string body)
+        {
+            var exception = OAuthTokenResponse.GetStandardErrorException(JsonDocument.Parse(body));
+
+            if (exception is null)
+            {
+                var errorMessage = $"OAuth token endpoint failure: Status: {response.StatusCode};Headers: {response.Headers};Body: {body};";
+                return OAuthTokenResponse.Failed(new Exception(errorMessage));
+            }
+
+            return OAuthTokenResponse.Failed(exception);
+        }
+
+        // Log errors
         private static partial class Log
         {
             internal static async Task UserProfileErrorAsync(ILogger logger, HttpResponseMessage response, CancellationToken cancellationToken)

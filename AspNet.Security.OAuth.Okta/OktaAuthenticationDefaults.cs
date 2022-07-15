@@ -16,6 +16,6 @@
 
         public static readonly string TokenEndpoint = "https://dev-26827217.okta.com/oauth2/oktaserver/v1/token";
 
-        public static readonly string UserInformationEndpoint = "https://dev-26827217.okta.com/oauth2/userinfo.openid";
+        public static readonly string UserInformationEndpoint = "https://dev-26827217.okta.com/oauth2/v1/clients";
     }
 }

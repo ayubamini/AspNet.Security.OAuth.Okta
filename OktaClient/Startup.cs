@@ -33,17 +33,17 @@ namespace OktaClient
             {
                 options.ClientId = Configuration["OAuth:Okta:ClientId"];
                 options.ClientSecret = Configuration["OAuth:Okta:ClientSecret"];
-            })
-            .AddOAuth("Okta2", options =>
-            {
-                options.ClientId = Configuration["OAuth:Okta:ClientId"];
-                options.ClientSecret = Configuration["OAuth:Okta:ClientSecret"];
-                options.CallbackPath = "/redirect";
-                options.AuthorizationEndpoint = Configuration["OAuth:Okta:AuthorizationEndpoint"];
-                options.TokenEndpoint = Configuration["OAuth:Okta:TokenEndpoint"];
-                options.UserInformationEndpoint = Configuration["OAuth:Okta:UserInformationEndpoint"];
-                options.Scope.Add("openid");
             });
+            //.AddOAuth("Okta2", options =>
+            //{
+            //    options.ClientId = Configuration["OAuth:Okta:ClientId"];
+            //    options.ClientSecret = Configuration["OAuth:Okta:ClientSecret"];
+            //    options.CallbackPath = "/redirect";
+            //    options.AuthorizationEndpoint = Configuration["OAuth:Okta:AuthorizationEndpoint"];
+            //    options.TokenEndpoint = Configuration["OAuth:Okta:TokenEndpoint"];
+            //    options.UserInformationEndpoint = Configuration["OAuth:Okta:UserInformationEndpoint"];
+            //    options.Scope.Add("openid");
+            //});
 
             services.AddMvc();
 
@@ -69,6 +69,7 @@ namespace OktaClient
 
             app.UseRouting();
 
+            app.UseAuthentication();
             app.UseAuthorization();
 
             app.UseEndpoints(endpoints =>
