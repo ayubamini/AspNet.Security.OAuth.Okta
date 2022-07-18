@@ -20,9 +20,50 @@ namespace OktaClient
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddAuthentication(options=>
+            services.AddMvc();
+
+            //services.AddAuthentication(options =>
+            //{
+            //    options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+            //    options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+            //    options.DefaultChallengeScheme = "Okta";
+            //})
+            //    .AddCookie()
+            //    .AddOAuth("Okta2", options =>
+            //    {
+            //        options.ClientId = Configuration["OAuth:Okta:ClientId"];
+            //        options.ClientSecret = Configuration["OAuth:Okta:ClientSecret"];
+            //        options.CallbackPath = new PathString("/redirect");
+            //        options.Scope.Add("openid");
+
+            //        options.AuthorizationEndpoint = "https://dev-26827217.okta.com/oauth2/oktaserver/v1/authorize";
+            //        options.TokenEndpoint = "https://dev-26827217.okta.com/oauth2/oktaserver/v1/token";
+            //        options.UserInformationEndpoint = "https://dev-26827217.okta.com/oauth2/userinfo.openid";
+
+            //        options.ClaimActions.MapJsonKey(ClaimTypes.Email, "email");
+            //        options.ClaimActions.MapJsonKey(ClaimTypes.Name, "name");
+
+            //        options.Events = new OAuthEvents
+            //        {
+            //            OnCreatingTicket = async context =>
+            //            {
+            //                var request = new HttpRequestMessage(HttpMethod.Get, context.Options.UserInformationEndpoint);
+            //                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            //                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.AccessToken);
+
+            //                var response = await context.Backchannel.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, context.HttpContext.RequestAborted);
+            //                response.EnsureSuccessStatusCode();
+
+            //                var user = JObject.Parse(await response.Content.ReadAsStringAsync());
+
+            //                //context.RunClaimActions(user);
+            //            }
+            //        };
+            //    });
+
+            services.AddAuthentication(options =>
             {
-                options.DefaultAuthenticateScheme = OktaAuthenticationDefaults.AuthenticationScheme;
+                options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
             })
             .AddCookie(options =>
             {
@@ -34,16 +75,6 @@ namespace OktaClient
                 options.ClientId = Configuration["OAuth:Okta:ClientId"];
                 options.ClientSecret = Configuration["OAuth:Okta:ClientSecret"];
             });
-            //.AddOAuth("Okta2", options =>
-            //{
-            //    options.ClientId = Configuration["OAuth:Okta:ClientId"];
-            //    options.ClientSecret = Configuration["OAuth:Okta:ClientSecret"];
-            //    options.CallbackPath = "/redirect";
-            //    options.AuthorizationEndpoint = Configuration["OAuth:Okta:AuthorizationEndpoint"];
-            //    options.TokenEndpoint = Configuration["OAuth:Okta:TokenEndpoint"];
-            //    options.UserInformationEndpoint = Configuration["OAuth:Okta:UserInformationEndpoint"];
-            //    options.Scope.Add("openid");
-            //});
 
             services.AddMvc();
 
