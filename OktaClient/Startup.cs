@@ -20,9 +20,9 @@ namespace OktaClient
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddAuthentication(options =>
+            services.AddAuthentication(options=>
             {
-                options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+                options.DefaultAuthenticateScheme = OktaAuthenticationDefaults.AuthenticationScheme;
             })
             .AddCookie(options =>
             {

@@ -222,7 +222,7 @@ namespace AspNet.Security.OAuth.Okta
         }
 
         // Step #2 - CHANGE RECEIVED CODE WITH ACCESS_TOKEN
-        protected virtual async Task<OAuthTokenResponse> ExchangeCodeAsync(OAuthCodeExchangeContext context)
+        protected override async Task<OAuthTokenResponse> ExchangeCodeAsync(OAuthCodeExchangeContext context)
         {
             var tokenRequestParameters = new Dictionary<string, string>()
             {
@@ -254,13 +254,14 @@ namespace AspNet.Security.OAuth.Okta
                 true => OAuthTokenResponse.Success(JsonDocument.Parse(body)),
                 false => PrepareFailedOAuthTokenReponse(response, body)
             };
-        }        
+        }
+
 
         // Step #3 - CREATE_TICKET TO GET USER INFORMATIONS BASED ON SCOPES
         protected override async Task<AuthenticationTicket> CreateTicketAsync(
             [NotNull] ClaimsIdentity identity,
             [NotNull] AuthenticationProperties properties,
-            [NotNull] Microsoft.AspNetCore.Authentication.OAuth.OAuthTokenResponse tokens)
+            [NotNull] OAuthTokenResponse tokens)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, Options.UserInformationEndpoint);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
@@ -275,16 +276,17 @@ namespace AspNet.Security.OAuth.Okta
             using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Context.RequestAborted));
 
             var principal = new ClaimsPrincipal(identity);
-            var context = new OAuthCreatingTicketContext(principal, properties, Context, Scheme, Options, Backchannel, tokens, payload.RootElement.GetProperty("data"));
+            var context = new OAuthCreatingTicketContext(principal, properties, Context, Scheme, Options, Backchannel, tokens, payload.RootElement);
             context.RunClaimActions();
 
             await Events.CreatingTicket(context);
             return new AuthenticationTicket(context.Principal!, context.Properties, Scheme.Name);
         }
 
+
         private static OAuthTokenResponse PrepareFailedOAuthTokenReponse(HttpResponseMessage response, string body)
         {
-            var exception = OAuthTokenResponse.GetStandardErrorException(JsonDocument.Parse(body));
+            var exception = GetStandardErrorException(JsonDocument.Parse(body));
 
             if (exception is null)
             {
@@ -294,6 +296,45 @@ namespace AspNet.Security.OAuth.Okta
 
             return OAuthTokenResponse.Failed(exception);
         }
+
+        internal static Exception? GetStandardErrorException(JsonDocument response)
+        {
+            var root = response.RootElement;
+            var error = root.GetString("error");
+
+            if (error is null)
+            {
+                return null;
+            }
+
+            var result = new StringBuilder("OAuth token endpoint failure: ");
+            result.Append(error);
+
+            if (root.TryGetProperty("error_description", out var errorDescription))
+            {
+                result.Append(";Description=");
+                result.Append(errorDescription);
+            }
+
+            if (root.TryGetProperty("error_uri", out var errorUri))
+            {
+                result.Append(";Uri=");
+                result.Append(errorUri);
+            }
+
+            var exception = new Exception(result.ToString());
+            exception.Data["error"] = error.ToString();
+            exception.Data["error_description"] = errorDescription.ToString();
+            exception.Data["error_uri"] = errorUri.ToString();
+
+            return exception;
+        }
+
+        //protected override string FormatScope(IEnumerable<string> scopes)
+        //    => string.Join(" ", scopes); // OAuth2 3.3 space separated
+
+        //protected override string FormatScope()
+        //    => FormatScope(Options.Scope);
 
         // Log errors
         private static partial class Log
@@ -330,6 +371,8 @@ namespace AspNet.Security.OAuth.Okta
             string headers,
             string body);
         }
+
+
 
     }
 }

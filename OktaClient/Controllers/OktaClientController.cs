@@ -42,18 +42,10 @@ namespace OktaClient.Controllers
 
         [HttpPost("~/redirect")]
         [HttpGet("~/redirect")]
-        public async Task<IActionResult> Callback()
+        public IActionResult Callback()
         {
-            var code = ViewBag.Code = Request.Query["code"].ToString();
-            var state = ViewBag.State = Request.Query["state"].ToString();
-
-            var query = new QueryBuilder();
-            query.Add("code", code.ToString());
-            query.Add("state", state.ToString());
-
             return View();
-        }
-            
+        }            
 
         [HttpGet("~/signout")]
         [HttpPost("~/signout")]
