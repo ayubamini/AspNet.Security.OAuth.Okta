@@ -23,10 +23,8 @@
         public static class Scopes
         {
             public const string OpenId = "openid";
-            public const string Email = "openid email";
-            public const string Profile = "openid profile";
-            public const string Photos = "photos";
-
+            public const string Email = "email";
+            public const string Profile = "profile";
         }
     }
 }
