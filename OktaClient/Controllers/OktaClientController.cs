@@ -40,13 +40,6 @@ namespace OktaClient.Controllers
             return Challenge(new AuthenticationProperties { RedirectUri = "/" }, provider);
         }
 
-        [HttpPost("~/redirect")]
-        [HttpGet("~/redirect")]
-        public IActionResult Callback()
-        {
-            return View();
-        }            
-
         [HttpGet("~/signout")]
         [HttpPost("~/signout")]
         public IActionResult SignOutCurrentUser()
