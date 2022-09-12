@@ -7,37 +7,39 @@ After that, make sure you Added Authentication block inside `Startup.cs` of your
 
 ```csharp
 public void ConfigureServices(IServiceCollection services)
-        {
+{
 
-            services.AddDbContext<ApplicationDbContext>(options =>
-                options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
-            services.AddControllersWithViews();
-            
-            
-            // Your external provider ------------------------------------------------
-            services.AddAuthentication()
-            .AddOkta(options =>
-            {
-                options.ClientId = Configuration["OAuth:Okta:ClientId"];
-                options.ClientSecret = Configuration["OAuth:Okta:ClientSecret"];
-            });
-            //-------------------------------------------------------------------------
+    services.AddDbContext<ApplicationDbContext>(options =>
+        options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
+    services.AddControllersWithViews();
 
-            services.AddMvc();
 
-            services.AddControllersWithViews();
-        }
+    // Your external provider ------------------------------------------------
+    services.AddAuthentication()
+    .AddOkta(options =>
+    {
+        options.ClientId = Configuration["OAuth:Okta:ClientId"];
+        options.ClientSecret = Configuration["OAuth:Okta:ClientSecret"];
+    });
+    //-------------------------------------------------------------------------
+
+    services.AddMvc();
+
+    services.AddControllersWithViews();
+}
 ```
+
 And this configuration in `appsettings.json` file (You will get this values when you register in developer.okta.com):
 
 ```csharp
-  "OAuth": {
+ "OAuth": {
     "Okta": {
       "ClientId": "{YOUR_CLIENT_ID}",
       "ClientSecret": "{YOUR_CLIENT_SECRET}"
     }
   }
 ```
+
 And in the last no need to add extra controller for this reason and you can use `Microsoft` Scaffolding Identity ExternalLogin service.
 
 For more information about OAuth 2.0 please, use this link https://oauth.net/2
